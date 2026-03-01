@@ -24,6 +24,15 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org/
 
+      - name: Stop if tag already exists
+        id: tag_check
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag already exists. Nothing to release."
+            exit 0
+          fi
+
       - name: Read package version
         id: pkg
         run: |
