@@ -1,4 +1,4 @@
-name: Release on version change
+name: Release & Publish
 
 on:
   push:
@@ -13,36 +13,72 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get package.json version
-        id: package_version
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org/
+
+      - name: Read package version
+        id: pkg
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Get latest git tag
-        id: latest_tag
+        id: tag
         run: |
           git fetch --tags
           TAG=$(git tag --sort=-v:refname | head -n 1)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Create tag if version changed
-        if: steps.package_version.outputs.version != steps.latest_tag.outputs.tag
+      - name: Stop if version unchanged
+        if: steps.pkg.outputs.version == steps.tag.outputs.tag
+        run: |
+          echo "No new version. Skipping release."
+          exit 0
+
+      - name: Check if version exists on npm
+        id: npm_check
+        run: |
+          if npm view $(node -p "require('./package.json').name")@${{ steps.pkg.outputs.version }} version > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop if version already published
+        if: steps.npm_check.outputs.exists == 'true'
+        run: |
+          echo "Version already exists on npm. Skipping publish."
+          exit 0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Create git tag
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git tag ${{ steps.package_version.outputs.version }}
-          git push origin ${{ steps.package_version.outputs.version }}
+          git tag ${{ steps.pkg.outputs.version }}
+          git push origin ${{ steps.pkg.outputs.version }}
 
       - name: Create GitHub Release
-        if: steps.package_version.outputs.version != steps.latest_tag.outputs.tag
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.package_version.outputs.version }}
-          name: Release ${{ steps.package_version.outputs.version }}
+          tag_name: ${{ steps.pkg.outputs.version }}
+          name: Release ${{ steps.pkg.outputs.version }}
           generate_release_notes: true
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm_token }}
