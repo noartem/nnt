@@ -1,0 +1,48 @@
+name: Release on version change
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get package.json version
+        id: package_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get latest git tag
+        id: latest_tag
+        run: |
+          git fetch --tags
+          TAG=$(git tag --sort=-v:refname | head -n 1)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create tag if version changed
+        if: steps.package_version.outputs.version != steps.latest_tag.outputs.tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag ${{ steps.package_version.outputs.version }}
+          git push origin ${{ steps.package_version.outputs.version }}
+
+      - name: Create GitHub Release
+        if: steps.package_version.outputs.version != steps.latest_tag.outputs.tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package_version.outputs.version }}
+          name: Release ${{ steps.package_version.outputs.version }}
+          generate_release_notes: true
