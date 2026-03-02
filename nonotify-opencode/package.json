@@ -1,0 +1,24 @@
+{
+  "name": "nonotify-opencode",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for nonotify alerts",
+  "type": "module",
+  "main": "./index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "exports": {
+    ".": "./index.js"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "nonotify",
+    "nnt",
+    "notification"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "nonotify": "^0.1.7"
+  }
+}
