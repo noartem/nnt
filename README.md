@@ -53,7 +53,7 @@ nnt "Very long task finished. All tests passed, check out result"
 You can install agent skills for your agents:
 
 ```bash
-nnt skills add                              # install skills globally
+nnt skills add                                # install skills globally
 cp ~/.agents/skills/nnt-* ./.agents/skills/   # install in current project
 ```
 
