@@ -1,8 +1,6 @@
-# nnt (nonotify)
+# nnt
 
-Terminal-first notifier for Telegram.
-
-Use it to send yourself a message when tasks are done, including from coding agents.
+А terminal-first notifier built with [incur](https://github.com/wevm/incur). Use it to send yourself messages from the terminal, including from coding agents and CI jobs.
 
 ## Install
 
@@ -10,20 +8,7 @@ Use it to send yourself a message when tasks are done, including from coding age
 npm install -g nonotify
 ```
 
-After install, `nnt` is available globally.
-
-## Config location
-
-- Default: `~/.config/nnt/nnt.json`
-- Override: set `NNT_CONFIG_DIR`
-
-Example:
-
-```bash
-export NNT_CONFIG_DIR="$HOME/.config/nnt"
-```
-
-Config is stored as JSON in `<config-dir>/nnt.json`.
+After installation, `nnt` is available globally.
 
 ## Add profile
 
@@ -31,20 +16,46 @@ Config is stored as JSON in `<config-dir>/nnt.json`.
 nnt profile add
 ```
 
-Optional explicit provider form:
-
-```bash
-nnt profile add telegram
-```
-
 Flow:
 
 1. Enter profile name.
 2. Enter Telegram bot token.
 3. Send any message to your bot in Telegram.
-4. CLI captures `chat_id`, shows connected Telegram `username`, stores the profile, and sends a confirmation message back to chat.
+4. CLI captures `chatId`, shows connected Telegram `username`, stores the profile, and sends a confirmation message back to chat.
 
 The first profile becomes default profile automatically.
+
+## Send messages
+
+Send with the default profile:
+
+```bash
+nnt "Cool message using nnt"
+```
+
+Send with a specific profile:
+
+```bash
+nnt "some urgent message" --profile=important
+```
+
+Typical agent usage:
+
+```bash
+# User: Complete a long task, while I'm away, when finish notify me via nnt
+# Agent: *working*
+# Agent after task completed:
+nnt "Very long task finished. All tests passed, check out result"
+```
+
+## Install skills
+
+You can install agent skills for your agents:
+
+```bash
+nnt skills add                              # install skills globally
+cp ~/.agents/skills/nnt-* ./.agents/skills/   # install in current project
+```
 
 ## Manage profiles
 
@@ -54,19 +65,19 @@ List profiles:
 nnt profile list
 ```
 
-Show default profile:
+Show the default profile:
 
 ```bash
 nnt profile default
 ```
 
-Set default profile:
+Set the default profile:
 
 ```bash
 nnt profile default important-profile
 ```
 
-Edit profile (rename, token/chat update, reconnect):
+Edit a profile (rename, token/chat update, reconnect):
 
 ```bash
 nnt profile edit
@@ -76,7 +87,7 @@ nnt profile edit critical-profile --botToken=123:abc
 nnt profile edit critical-profile --reconnect
 ```
 
-`nnt profile edit` starts interactive mode and asks you to select a profile first.
+`nnt profile edit` starts interactive mode and prompts you to select a profile first.
 
 Delete profile:
 
@@ -84,42 +95,41 @@ Delete profile:
 nnt profile delete critical-profile
 ```
 
-By default, profile commands print human-readable output in terminal. For strict machine-friendly output, use format flags:
+By default, profile commands print human-readable output in terminal. For strict, machine-friendly output, use format flags:
 
 ```bash
 nnt profile list --format json
 nnt profile default --format=md
 ```
 
-## Send messages
+## Config location
 
-Send using default profile:
+Config is stored as JSON at `<config-dir>/nnt.json`.
 
-```bash
-nnt "Default message"
-```
+- Default config dir: `~/.config/nnt`
+- Default config path: `~/.config/nnt/nnt.json`
+- To override it, set `NNT_CONFIG_DIR`
 
-Send using specific profile:
-
-```bash
-nnt "some message for user" --profile=important-profile
-```
-
-Equivalent explicit command:
+Example:
 
 ```bash
-nnt send "some message for user" --profile=important-profile
+export NNT_CONFIG_DIR="$HOME/.custom-config/custom-nnt"
 ```
 
-## Typical agent usage
+If you run coding agents in a container, mount the config directory as read-only:
 
-```bash
-nnt "Task finished: migrations applied and tests passed"
+```yaml
+services:
+  app:
+    environment:
+      - NNT_CONFIG_DIR=/var/nnt
+    volumes:
+      - ${HOME}/.config/nnt:/var/nnt:ro
 ```
 
-## Node.js API
+## API
 
-`Notifier` loads config using `EnvConfigLoader` by default.
+You can integrate `nnt` into your application. Useful when buildling extensions for coding agents. The `Notifier` automaticly loads profile information, so you can send messages easily.
 
 ```ts
 import { Notifier } from "nonotify";
@@ -131,7 +141,7 @@ await notifier.send({
 });
 ```
 
-Also you can pass profile data directly.
+Notifier loads config using `EnvConfigLoader` by default, but you can also pass profile data directly.
 
 ```ts
 import { Notifier } from "nonotify";
