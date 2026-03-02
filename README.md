@@ -14,7 +14,7 @@ After install, `nnt` is available globally.
 
 ## Config location
 
-- Default: `~/.nnt/config`
+- Default: `~/.config/nnt/nnt.json`
 - Override: set `NNT_CONFIG_DIR`
 
 Example:
@@ -23,7 +23,7 @@ Example:
 export NNT_CONFIG_DIR="$HOME/.config/nnt"
 ```
 
-Config is stored as JSON in `<config-dir>/config`.
+Config is stored as JSON in `<config-dir>/nnt.json`.
 
 ## Add profile
 

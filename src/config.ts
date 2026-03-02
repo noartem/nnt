@@ -20,17 +20,25 @@ const DEFAULT_CONFIG: NntConfig = {
   profiles: {},
 };
 
+const CONFIG_FILENAME = "nnt.json";
+const DEFAULT_CONFIG_DIR = join(homedir(), ".config", "nnt");
+const LEGACY_CONFIG_PATH = join(homedir(), ".nnt", "config");
+
 export function getConfigDir(): string {
   const dir = process.env.NNT_CONFIG_DIR;
   if (dir && dir.trim() !== "") {
     return resolve(dir);
   }
 
-  return join(homedir(), ".nnt");
+  return DEFAULT_CONFIG_DIR;
 }
 
 export function getConfigPath(): string {
-  return join(getConfigDir(), "config");
+  return join(getConfigDir(), CONFIG_FILENAME);
+}
+
+export function getLegacyConfigPath(): string {
+  return LEGACY_CONFIG_PATH;
 }
 
 export async function loadConfig(): Promise<NntConfig> {
@@ -38,18 +46,27 @@ export async function loadConfig(): Promise<NntConfig> {
 
   try {
     const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as Partial<NntConfig>;
-
-    return {
-      defaultProfile:
-        typeof parsed.defaultProfile === "string"
-          ? parsed.defaultProfile
-          : null,
-      profiles: parsed.profiles ?? {},
-    };
+    return parseConfig(raw);
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      return { ...DEFAULT_CONFIG };
+      try {
+        const legacyRaw = await readFile(getLegacyConfigPath(), "utf8");
+        const parsed = parseConfig(legacyRaw);
+
+        try {
+          await saveConfig(parsed);
+        } catch {
+          // Best effort migration only.
+        }
+
+        return parsed;
+      } catch (legacyError) {
+        if (isNodeError(legacyError) && legacyError.code === "ENOENT") {
+          return { ...DEFAULT_CONFIG };
+        }
+
+        throw legacyError;
+      }
     }
 
     throw error;
@@ -74,4 +91,14 @@ export async function saveConfig(config: NntConfig): Promise<void> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === "object" && error !== null && "code" in error;
+}
+
+function parseConfig(raw: string): NntConfig {
+  const parsed = JSON.parse(raw) as Partial<NntConfig>;
+
+  return {
+    defaultProfile:
+      typeof parsed.defaultProfile === "string" ? parsed.defaultProfile : null,
+    profiles: parsed.profiles ?? {},
+  };
 }

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { getConfigPath } from "./config.js";
+import { getConfigPath, getLegacyConfigPath } from "./config.js";
 import { sendTelegramMessage } from "./telegram.js";
 
 export type NotifierProfile = {
@@ -74,31 +74,34 @@ type RawRecordProfile = {
 
 export class EnvConfigLoader implements NotifierConfigLoader {
   load(): NotifierConfig {
-    const configPath = getConfigPath();
+    const configPaths = Array.from(
+      new Set([getConfigPath(), getLegacyConfigPath()]),
+    );
 
-    let rawConfig: RawEnvConfig;
+    for (const configPath of configPaths) {
+      try {
+        const raw = readFileSync(configPath, "utf8");
+        const rawConfig = JSON.parse(raw) as RawEnvConfig;
+        return normalizeEnvConfig(rawConfig);
+      } catch (error) {
+        if (isNodeError(error) && error.code === "ENOENT") {
+          continue;
+        }
 
-    try {
-      const raw = readFileSync(configPath, "utf8");
-      rawConfig = JSON.parse(raw) as RawEnvConfig;
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return {
-          profiles: [],
-          defaultProfile: null,
-        };
+        if (error instanceof SyntaxError) {
+          throw new NotifierError(
+            `Invalid JSON in config file at ${configPath}: ${error.message}`,
+          );
+        }
+
+        throw error;
       }
-
-      if (error instanceof SyntaxError) {
-        throw new NotifierError(
-          `Invalid JSON in config file at ${configPath}: ${error.message}`,
-        );
-      }
-
-      throw error;
     }
 
-    return normalizeEnvConfig(rawConfig);
+    return {
+      profiles: [],
+      defaultProfile: null,
+    };
   }
 }
 
