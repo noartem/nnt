@@ -1,6 +1,6 @@
 # nonotify-opencode
 
-`nonotify-opencode` is an OpenCode plugin that sends notifications through `nonotify` when:
+[OpenCode](https://github.com/anomalyco/opencode) plugin that sends notifications through [nnt](https://github.com/noartem/nnt) when:
 
 - a permission request is pending for more than 1 minute
 - an assistant reply completes after running for more than 5 minutes
@@ -10,6 +10,7 @@
 1. Configure `nnt` at least once (if you have not done it yet):
 
 ```bash
+npm i -g nonotify
 nnt profile add
 ```
 

@@ -102,6 +102,10 @@ nnt profile list --format json
 nnt profile default --format=md
 ```
 
+## OpenCode plugin
+
+There is also the [nonotify-opencode](https://www.npmjs.com/package/nonotify-opencode) plugin that automatically sends you important notifications via `nnt` when you use [OpenCode](https://github.com/anomalyco/opencode). Learn more [here](https://github.com/noartem/nnt/tree/main/nonotify-opencode).
+
 ## Config location
 
 Config is stored as JSON at `<config-dir>/nnt.json`.
