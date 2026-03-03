@@ -64,14 +64,35 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
   const pendingLongReplies = new Map();
   const notifiedLongMessages = new Set();
   const notifier = options.notifier ?? (await createDefaultNotifier());
-  const hasOptionApprovalDelayMs = Object.prototype.hasOwnProperty.call(options, "approvalDelayMs");
-  const hasOptionQuestionDelayMs = Object.prototype.hasOwnProperty.call(options, "questionDelayMs");
-  const hasOptionLongReplyMs = Object.prototype.hasOwnProperty.call(options, "longReplyMs");
-  const hasOptionLongReplyNotifyDelayMs = Object.prototype.hasOwnProperty.call(options, "longReplyNotifyDelayMs");
-  let approvalDelayMs = normalizeDelayMs(options.approvalDelayMs, ONE_MINUTE_MS);
-  let questionDelayMs = normalizeDelayMs(options.questionDelayMs, ONE_MINUTE_MS);
+  const hasOptionApprovalDelayMs = Object.prototype.hasOwnProperty.call(
+    options,
+    "approvalDelayMs",
+  );
+  const hasOptionQuestionDelayMs = Object.prototype.hasOwnProperty.call(
+    options,
+    "questionDelayMs",
+  );
+  const hasOptionLongReplyMs = Object.prototype.hasOwnProperty.call(
+    options,
+    "longReplyMs",
+  );
+  const hasOptionLongReplyNotifyDelayMs = Object.prototype.hasOwnProperty.call(
+    options,
+    "longReplyNotifyDelayMs",
+  );
+  let approvalDelayMs = normalizeDelayMs(
+    options.approvalDelayMs,
+    ONE_MINUTE_MS,
+  );
+  let questionDelayMs = normalizeDelayMs(
+    options.questionDelayMs,
+    ONE_MINUTE_MS,
+  );
   let longReplyMs = normalizeDelayMs(options.longReplyMs, FIVE_MINUTES_MS);
-  let longReplyNotifyDelayMs = normalizeDelayMs(options.longReplyNotifyDelayMs, ONE_MINUTE_MS);
+  let longReplyNotifyDelayMs = normalizeDelayMs(
+    options.longReplyNotifyDelayMs,
+    ONE_MINUTE_MS,
+  );
   const schedule = options.schedule ?? setTimeout;
   const cancel = options.cancel ?? clearTimeout;
   const readProfile = options.readProfile ?? defaultProfileReader;
@@ -100,9 +121,13 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
       await notifier.send({ message, profile });
     } catch (error) {
       notificationsDisabled = true;
-      await log("warn", "Failed to send nonotify alert. Alerts are now disabled.", {
-        error: String(error),
-      });
+      await log(
+        "warn",
+        "Failed to send nonotify alert. Alerts are now disabled.",
+        {
+          error: String(error),
+        },
+      );
     }
   };
 
@@ -122,13 +147,17 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
       pendingPermissions.delete(requestID);
 
       const permissionName = pending.permission || "unknown";
-      const patterns = pending.patterns.length > 0 ? pending.patterns.join(", ") : "none";
+      const patterns =
+        pending.patterns.length > 0 ? pending.patterns.join(", ") : "none";
 
-      await sendNotification(`Approval pending > ${formatDuration(approvalDelayMs)}`, [
-        `session: ${pending.sessionID}`,
-        `permission: ${permissionName}`,
-        `patterns: ${patterns}`,
-      ]);
+      await sendNotification(
+        `Approval pending > ${formatDuration(approvalDelayMs)}`,
+        [
+          `session: ${pending.sessionID}`,
+          `permission: ${permissionName}`,
+          `patterns: ${patterns}`,
+        ],
+      );
     }, approvalDelayMs);
 
     pendingPermissions.set(requestID, {
@@ -173,23 +202,31 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
 
       pendingQuestions.delete(requestID);
 
-      const headers = pending.headers.length > 0 ? pending.headers.join(" | ") : "none";
+      const headers =
+        pending.headers.length > 0 ? pending.headers.join(" | ") : "none";
 
-      await sendNotification(`Question pending > ${formatDuration(questionDelayMs)}`, [
-        `session: ${pending.sessionID}`,
-        `questions: ${pending.questionCount}`,
-        `headers: ${headers}`,
-      ]);
+      await sendNotification(
+        `Question pending > ${formatDuration(questionDelayMs)}`,
+        [
+          `session: ${pending.sessionID}`,
+          `questions: ${pending.questionCount}`,
+          `headers: ${headers}`,
+        ],
+      );
     }, questionDelayMs);
 
-    const questions = Array.isArray(properties.questions) ? properties.questions : [];
+    const questions = Array.isArray(properties.questions)
+      ? properties.questions
+      : [];
 
     pendingQuestions.set(requestID, {
       sessionID: properties.sessionID || "unknown",
       questionCount: questions.length,
       headers: questions
         .map((question) => question?.header)
-        .filter((header) => typeof header === "string" && header.trim().length > 0)
+        .filter(
+          (header) => typeof header === "string" && header.trim().length > 0,
+        )
         .slice(0, 3),
       timeout,
     });
@@ -213,7 +250,12 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
     if (!info || info.role !== "assistant") return;
 
     const messageID = info.id;
-    if (!messageID || notifiedLongMessages.has(messageID) || pendingLongReplies.has(messageID)) return;
+    if (
+      !messageID ||
+      notifiedLongMessages.has(messageID) ||
+      pendingLongReplies.has(messageID)
+    )
+      return;
 
     const created = Number(info.time?.created);
     const completed = Number(info.time?.completed);
@@ -285,10 +327,16 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
 
       const delays = readDelaysFromConfig(config);
       if (!hasOptionApprovalDelayMs) {
-        approvalDelayMs = normalizeDelayMs(delays.approvalDelayMs, approvalDelayMs);
+        approvalDelayMs = normalizeDelayMs(
+          delays.approvalDelayMs,
+          approvalDelayMs,
+        );
       }
       if (!hasOptionQuestionDelayMs) {
-        questionDelayMs = normalizeDelayMs(delays.questionDelayMs, questionDelayMs);
+        questionDelayMs = normalizeDelayMs(
+          delays.questionDelayMs,
+          questionDelayMs,
+        );
       }
       if (!hasOptionLongReplyMs) {
         longReplyMs = normalizeDelayMs(delays.longReplyMs, longReplyMs);
