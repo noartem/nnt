@@ -135,61 +135,6 @@ test("uses timing values from opencode config (seconds)", async () => {
   assert.equal(logs.length, 0);
 });
 
-test("uses notify command names from opencode config", async () => {
-  const sent = [];
-  const logs = [];
-  const notifier = {
-    send: async (payload) => {
-      sent.push(payload);
-    },
-  };
-
-  const hooks = await createNonotifyOpencodeHooks(
-    { client: createClient(logs) },
-    {
-      notifier,
-    },
-  );
-
-  await hooks.config({
-    "nonotify-opencode": {
-      notifyOnCommandNames: ["notify-manual"],
-    },
-  });
-
-  await hooks.event({
-    event: {
-      type: "command.executed",
-      properties: {
-        commandName: "notify-manual",
-        sessionID: "session-1",
-      },
-    },
-  });
-
-  await hooks.event({
-    event: {
-      type: "message.updated",
-      properties: {
-        info: {
-          id: "message-1",
-          role: "assistant",
-          sessionID: "session-1",
-          agent: "general",
-          time: {
-            created: 1_000,
-            completed: 10_000,
-          },
-        },
-      },
-    },
-  });
-
-  assert.equal(sent.length, 1);
-  assert.equal(logs.length, 0);
-  assert.match(sent[0].message, /Reply completed/);
-});
-
 test("coalesces permission asked/updated into one notification", async () => {
   const sent = [];
   const logs = [];
@@ -373,105 +318,6 @@ test("does not send question notification if question is replied", async () => {
   assert.equal(logs.length, 0);
 });
 
-test("sends one notification for reply completion after notify command", async () => {
-  const sent = [];
-  const logs = [];
-  const notifier = {
-    send: async (payload) => {
-      sent.push(payload);
-    },
-  };
-
-  const hooks = await createNonotifyOpencodeHooks(
-    { client: createClient(logs) },
-    { notifier },
-  );
-
-  await hooks.event({
-    event: {
-      type: "command.executed",
-      properties: {
-        commandName: "notify-next-reply",
-        sessionID: "session-1",
-        sessionName: "Focus mode",
-      },
-    },
-  });
-
-  const completionEvent = {
-    event: {
-      type: "message.updated",
-      properties: {
-        info: {
-          id: "message-1",
-          role: "assistant",
-          sessionID: "session-1",
-          agent: "general",
-          time: {
-            created: 1000,
-            completed: 10_000,
-          },
-        },
-      },
-    },
-  };
-
-  await hooks.event(completionEvent);
-  await hooks.event(completionEvent);
-
-  assert.equal(sent.length, 1);
-  assert.equal(logs.length, 0);
-  assert.match(sent[0].message, /Reply completed/);
-  assert.match(sent[0].message, /duration: 0m 9s/);
-  assert.match(sent[0].message, /session: Focus mode \(session-1\)/);
-});
-
-test("does not notify completion for non-matching command", async () => {
-  const sent = [];
-  const logs = [];
-  const notifier = {
-    send: async (payload) => {
-      sent.push(payload);
-    },
-  };
-
-  const hooks = await createNonotifyOpencodeHooks(
-    { client: createClient(logs) },
-    { notifier, notifyOnCommandNames: ["notify-manual"] },
-  );
-
-  await hooks.event({
-    event: {
-      type: "command.executed",
-      properties: {
-        commandName: "other-command",
-        sessionID: "session-1",
-      },
-    },
-  });
-
-  await hooks.event({
-    event: {
-      type: "message.updated",
-      properties: {
-        info: {
-          id: "message-1",
-          role: "assistant",
-          sessionID: "session-1",
-          agent: "general",
-          time: {
-            created: 0,
-            completed: 10_000,
-          },
-        },
-      },
-    },
-  });
-
-  assert.equal(sent.length, 0);
-  assert.equal(logs.length, 0);
-});
-
 test("disables notifications after first send failure", async () => {
   const logs = [];
   let sendCalls = 0;
@@ -484,64 +330,34 @@ test("disables notifications after first send failure", async () => {
 
   const hooks = await createNonotifyOpencodeHooks(
     { client: createClient(logs) },
-    { notifier },
+    { notifier, approvalDelayMs: 20 },
   );
 
   await hooks.event({
     event: {
-      type: "command.executed",
+      type: "permission.asked",
       properties: {
-        commandName: "notify-next-reply",
+        id: "req-1",
         sessionID: "session-1",
+        permission: "bash",
       },
     },
   });
 
+  await sleep(50);
+
   await hooks.event({
     event: {
-      type: "message.updated",
+      type: "permission.asked",
       properties: {
-        info: {
-          id: "message-1",
-          role: "assistant",
-          sessionID: "session-1",
-          agent: "general",
-          time: {
-            created: 0,
-            completed: 10_000,
-          },
-        },
+        id: "req-2",
+        sessionID: "session-2",
+        permission: "bash",
       },
     },
   });
 
-  await hooks.event({
-    event: {
-      type: "command.executed",
-      properties: {
-        commandName: "notify-next-reply",
-        sessionID: "session-1",
-      },
-    },
-  });
-
-  await hooks.event({
-    event: {
-      type: "message.updated",
-      properties: {
-        info: {
-          id: "message-2",
-          role: "assistant",
-          sessionID: "session-1",
-          agent: "general",
-          time: {
-            created: 1_000,
-            completed: 11_000,
-          },
-        },
-      },
-    },
-  });
+  await sleep(50);
 
   assert.equal(sendCalls, 1);
   assert.equal(logs.length, 1);
