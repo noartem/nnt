@@ -4,7 +4,6 @@
 
 - a permission request is pending for more than 1 minute
 - a question request (agent needs your input) is pending for more than 1 minute
-- an agent reply completes after you run `/notify-next-reply` command
 
 ## Installation (from npm)
 
@@ -49,6 +48,4 @@ OpenCode installs npm plugins and their dependencies automatically at startup.
 - Timing values are in seconds.
 - `approvalDelaySeconds`: wait before notifying about pending permission request (default `60`).
 - `questionDelaySeconds`: wait before notifying about pending question request (default `60`).
-
-When the `notify-next-reply` command is executed, the plugin waits for the next completed assistant message in that session and sends a completion alert.
 

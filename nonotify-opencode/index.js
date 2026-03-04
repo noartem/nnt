@@ -1,6 +1,5 @@
 const ONE_MINUTE_MS = 60_000;
 const PLUGIN_CONFIG_KEY = "nonotify-opencode";
-const DEFAULT_NOTIFY_ON_COMMAND_NAMES = ["notify-next-reply"];
 
 function normalizeDelayMs(value, fallbackMs) {
   if (!Number.isFinite(value) || value < 0) return fallbackMs;
@@ -51,38 +50,6 @@ function readDelaysFromConfig(config) {
   };
 }
 
-function normalizeCommandName(value) {
-  if (typeof value !== "string") return undefined;
-  const commandName = value.trim();
-  return commandName.length > 0 ? commandName : undefined;
-}
-
-function normalizeCommandNames(values, fallback) {
-  if (!Array.isArray(values)) return fallback;
-
-  const normalized = values
-    .map((value) => normalizeCommandName(value))
-    .filter(Boolean);
-
-  if (normalized.length === 0) return fallback;
-  return [...new Set(normalized)];
-}
-
-function readNotifyOnCommandNamesFromConfig(config) {
-  if (!config || typeof config !== "object") return undefined;
-
-  const pluginConfig = config[PLUGIN_CONFIG_KEY];
-  if (!pluginConfig || typeof pluginConfig !== "object") return undefined;
-
-  if (typeof pluginConfig.notifyOnCommandName === "string") {
-    return normalizeCommandNames(
-      [pluginConfig.notifyOnCommandName],
-      undefined,
-    );
-  }
-
-  return normalizeCommandNames(pluginConfig.notifyOnCommandNames, undefined);
-}
 
 function readSessionID(properties) {
   if (!properties || typeof properties !== "object") return undefined;
@@ -125,26 +92,6 @@ function formatSessionLabel(sessionID, sessionName) {
   return sessionName || sessionID || "unknown";
 }
 
-function readCommandName(properties) {
-  if (!properties || typeof properties !== "object") return undefined;
-
-  const candidates = [
-    properties.commandName,
-    properties.name,
-    properties.id,
-    properties.command,
-    properties.command?.name,
-    properties.command?.id,
-  ];
-
-  for (const candidate of candidates) {
-    const commandName = normalizeCommandName(candidate);
-    if (commandName) return commandName;
-  }
-
-  return undefined;
-}
-
 async function createDefaultNotifier() {
   const { Notifier } = await import("nonotify");
   return new Notifier();
@@ -153,7 +100,6 @@ async function createDefaultNotifier() {
 export async function createNonotifyOpencodeHooks({ client }, options = {}) {
   const pendingPermissions = new Map();
   const pendingQuestions = new Map();
-  const pendingReplyNotifications = new Map();
   const notifier = options.notifier ?? (await createDefaultNotifier());
   const hasOptionApprovalDelayMs = Object.prototype.hasOwnProperty.call(
     options,
@@ -170,10 +116,6 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
   let questionDelayMs = normalizeDelayMs(
     options.questionDelayMs,
     ONE_MINUTE_MS,
-  );
-  let notifyOnCommandNames = normalizeCommandNames(
-    options.notifyOnCommandNames,
-    DEFAULT_NOTIFY_ON_COMMAND_NAMES,
   );
   const schedule = options.schedule ?? setTimeout;
   const cancel = options.cancel ?? clearTimeout;
@@ -331,43 +273,6 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
     pendingQuestions.delete(requestID);
   };
 
-  const maybeNotifyReplyCompletion = async (event) => {
-    const info = event.properties?.info;
-    if (!info || info.role !== "assistant") return;
-
-    const sessionID = readSessionID(info) || "unknown";
-    if (!pendingReplyNotifications.has(sessionID)) return;
-
-    const created = Number(info.time?.created);
-    const completed = Number(info.time?.completed);
-    if (!Number.isFinite(created) || !Number.isFinite(completed)) return;
-
-    const pendingSessionName = pendingReplyNotifications.get(sessionID);
-    const sessionLabel = formatSessionLabel(
-      sessionID,
-      readSessionName(info) || pendingSessionName,
-    );
-    const duration = Math.max(0, completed - created);
-    pendingReplyNotifications.delete(sessionID);
-
-    await sendNotification("Reply completed", [
-      `duration: ${formatDuration(duration)}`,
-      `session: ${sessionLabel}`,
-      `agent: ${info.agent || "unknown"}`,
-    ]);
-  };
-
-  const maybeStartReplyCompletionNotification = (event) => {
-    const properties = event.properties ?? {};
-    const commandName = readCommandName(properties);
-    if (!commandName || !notifyOnCommandNames.includes(commandName)) return;
-
-    const sessionID = readSessionID(properties);
-    if (!sessionID) return;
-
-    pendingReplyNotifications.set(sessionID, readSessionName(properties));
-  };
-
   const cleanupSessionPendingInputs = (event) => {
     const sessionID = event.properties?.sessionID;
     if (!sessionID) return;
@@ -383,8 +288,6 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
       cancel(pending.timeout);
       pendingQuestions.delete(requestID);
     }
-
-    pendingReplyNotifications.delete(sessionID);
   };
 
   return {
@@ -406,13 +309,6 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
           questionDelayMs,
         );
       }
-
-      if (!Object.prototype.hasOwnProperty.call(options, "notifyOnCommandNames")) {
-        notifyOnCommandNames = normalizeCommandNames(
-          readNotifyOnCommandNamesFromConfig(config),
-          notifyOnCommandNames,
-        );
-      }
     },
     event: async ({ event }) => {
       switch (event.type) {
@@ -429,12 +325,6 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
         case "question.replied":
         case "question.rejected":
           stopQuestionTimer(event);
-          return;
-        case "message.updated":
-          await maybeNotifyReplyCompletion(event);
-          return;
-        case "command.executed":
-          maybeStartReplyCompletionNotification(event);
           return;
         case "session.deleted":
           cleanupSessionPendingInputs(event);
