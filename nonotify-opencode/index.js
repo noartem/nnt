@@ -1,6 +1,6 @@
 const ONE_MINUTE_MS = 60_000;
-const FIVE_MINUTES_MS = 5 * 60_000;
 const PLUGIN_CONFIG_KEY = "nonotify-opencode";
+const DEFAULT_NOTIFY_ON_COMMAND_NAMES = ["notify-next-reply"];
 
 function normalizeDelayMs(value, fallbackMs) {
   if (!Number.isFinite(value) || value < 0) return fallbackMs;
@@ -48,9 +48,101 @@ function readDelaysFromConfig(config) {
   return {
     approvalDelayMs: secondsToMs(pluginConfig.approvalDelaySeconds),
     questionDelayMs: secondsToMs(pluginConfig.questionDelaySeconds),
-    longReplyMs: secondsToMs(pluginConfig.longReplyThresholdSeconds),
-    longReplyNotifyDelayMs: secondsToMs(pluginConfig.activityDelaySeconds),
   };
+}
+
+function normalizeCommandName(value) {
+  if (typeof value !== "string") return undefined;
+  const commandName = value.trim();
+  return commandName.length > 0 ? commandName : undefined;
+}
+
+function normalizeCommandNames(values, fallback) {
+  if (!Array.isArray(values)) return fallback;
+
+  const normalized = values
+    .map((value) => normalizeCommandName(value))
+    .filter(Boolean);
+
+  if (normalized.length === 0) return fallback;
+  return [...new Set(normalized)];
+}
+
+function readNotifyOnCommandNamesFromConfig(config) {
+  if (!config || typeof config !== "object") return undefined;
+
+  const pluginConfig = config[PLUGIN_CONFIG_KEY];
+  if (!pluginConfig || typeof pluginConfig !== "object") return undefined;
+
+  if (typeof pluginConfig.notifyOnCommandName === "string") {
+    return normalizeCommandNames(
+      [pluginConfig.notifyOnCommandName],
+      undefined,
+    );
+  }
+
+  return normalizeCommandNames(pluginConfig.notifyOnCommandNames, undefined);
+}
+
+function readSessionID(properties) {
+  if (!properties || typeof properties !== "object") return undefined;
+  const sessionID =
+    properties.sessionID ||
+    properties.sessionId ||
+    properties.session?.id ||
+    properties.session?.sessionID;
+  return typeof sessionID === "string" && sessionID.length > 0
+    ? sessionID
+    : undefined;
+}
+
+function readSessionName(properties) {
+  if (!properties || typeof properties !== "object") return undefined;
+
+  const candidates = [
+    properties.sessionName,
+    properties.sessionTitle,
+    properties.session?.name,
+    properties.session?.title,
+    properties.name,
+    properties.title,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const sessionName = candidate.trim();
+    if (sessionName.length > 0) return sessionName;
+  }
+
+  return undefined;
+}
+
+function formatSessionLabel(sessionID, sessionName) {
+  if (sessionName && sessionID && sessionName !== sessionID) {
+    return `${sessionName} (${sessionID})`;
+  }
+
+  return sessionName || sessionID || "unknown";
+}
+
+function readCommandName(properties) {
+  if (!properties || typeof properties !== "object") return undefined;
+
+  const candidates = [
+    properties.commandName,
+    properties.name,
+    properties.id,
+    properties.command,
+    properties.command?.name,
+    properties.command?.id,
+  ];
+
+  for (const candidate of candidates) {
+    const commandName = normalizeCommandName(candidate);
+    if (commandName) return commandName;
+  }
+
+  return undefined;
 }
 
 async function createDefaultNotifier() {
@@ -61,8 +153,7 @@ async function createDefaultNotifier() {
 export async function createNonotifyOpencodeHooks({ client }, options = {}) {
   const pendingPermissions = new Map();
   const pendingQuestions = new Map();
-  const pendingLongReplies = new Map();
-  const notifiedLongMessages = new Set();
+  const pendingReplyNotifications = new Map();
   const notifier = options.notifier ?? (await createDefaultNotifier());
   const hasOptionApprovalDelayMs = Object.prototype.hasOwnProperty.call(
     options,
@@ -72,14 +163,6 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
     options,
     "questionDelayMs",
   );
-  const hasOptionLongReplyMs = Object.prototype.hasOwnProperty.call(
-    options,
-    "longReplyMs",
-  );
-  const hasOptionLongReplyNotifyDelayMs = Object.prototype.hasOwnProperty.call(
-    options,
-    "longReplyNotifyDelayMs",
-  );
   let approvalDelayMs = normalizeDelayMs(
     options.approvalDelayMs,
     ONE_MINUTE_MS,
@@ -88,10 +171,9 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
     options.questionDelayMs,
     ONE_MINUTE_MS,
   );
-  let longReplyMs = normalizeDelayMs(options.longReplyMs, FIVE_MINUTES_MS);
-  let longReplyNotifyDelayMs = normalizeDelayMs(
-    options.longReplyNotifyDelayMs,
-    ONE_MINUTE_MS,
+  let notifyOnCommandNames = normalizeCommandNames(
+    options.notifyOnCommandNames,
+    DEFAULT_NOTIFY_ON_COMMAND_NAMES,
   );
   const schedule = options.schedule ?? setTimeout;
   const cancel = options.cancel ?? clearTimeout;
@@ -133,7 +215,8 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
 
   const startPermissionTimer = (event) => {
     const properties = event.properties ?? {};
-    const requestID = properties.id;
+    const requestID =
+      properties.requestID || properties.permissionID || properties.id;
 
     if (!requestID) return;
 
@@ -153,7 +236,7 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
       await sendNotification(
         `Approval pending > ${formatDuration(approvalDelayMs)}`,
         [
-          `session: ${pending.sessionID}`,
+          `session: ${formatSessionLabel(pending.sessionID, pending.sessionName)}`,
           `permission: ${permissionName}`,
           `patterns: ${patterns}`,
         ],
@@ -161,7 +244,8 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
     }, approvalDelayMs);
 
     pendingPermissions.set(requestID, {
-      sessionID: properties.sessionID || "unknown",
+      sessionID: readSessionID(properties) || "unknown",
+      sessionName: readSessionName(properties),
       permission: properties.permission || properties.type,
       patterns: Array.isArray(properties.patterns)
         ? properties.patterns
@@ -176,7 +260,8 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
 
   const stopPermissionTimer = (event) => {
     const properties = event.properties ?? {};
-    const requestID = properties.requestID || properties.permissionID;
+    const requestID =
+      properties.requestID || properties.permissionID || properties.id;
 
     if (!requestID) return;
 
@@ -208,7 +293,7 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
       await sendNotification(
         `Question pending > ${formatDuration(questionDelayMs)}`,
         [
-          `session: ${pending.sessionID}`,
+          `session: ${formatSessionLabel(pending.sessionID, pending.sessionName)}`,
           `questions: ${pending.questionCount}`,
           `headers: ${headers}`,
         ],
@@ -220,7 +305,8 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
       : [];
 
     pendingQuestions.set(requestID, {
-      sessionID: properties.sessionID || "unknown",
+      sessionID: readSessionID(properties) || "unknown",
+      sessionName: readSessionName(properties),
       questionCount: questions.length,
       headers: questions
         .map((question) => question?.header)
@@ -245,59 +331,41 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
     pendingQuestions.delete(requestID);
   };
 
-  const maybeNotifyLongReply = (event) => {
+  const maybeNotifyReplyCompletion = async (event) => {
     const info = event.properties?.info;
     if (!info || info.role !== "assistant") return;
 
-    const messageID = info.id;
-    if (
-      !messageID ||
-      notifiedLongMessages.has(messageID) ||
-      pendingLongReplies.has(messageID)
-    )
-      return;
+    const sessionID = readSessionID(info) || "unknown";
+    if (!pendingReplyNotifications.has(sessionID)) return;
 
     const created = Number(info.time?.created);
     const completed = Number(info.time?.completed);
     if (!Number.isFinite(created) || !Number.isFinite(completed)) return;
 
-    const duration = completed - created;
-    if (duration <= longReplyMs) return;
+    const pendingSessionName = pendingReplyNotifications.get(sessionID);
+    const sessionLabel = formatSessionLabel(
+      sessionID,
+      readSessionName(info) || pendingSessionName,
+    );
+    const duration = Math.max(0, completed - created);
+    pendingReplyNotifications.delete(sessionID);
 
-    const timeout = schedule(async () => {
-      const pending = pendingLongReplies.get(messageID);
-      if (!pending) return;
-
-      pendingLongReplies.delete(messageID);
-      notifiedLongMessages.add(messageID);
-
-      await sendNotification("Long reply completed", [
-        `duration: ${formatDuration(pending.duration)}`,
-        `session: ${pending.sessionID}`,
-        `agent: ${pending.agent}`,
-      ]);
-    }, longReplyNotifyDelayMs);
-
-    pendingLongReplies.set(messageID, {
-      sessionID: info.sessionID || "unknown",
-      duration,
-      agent: info.agent || "unknown",
-      timeout,
-    });
+    await sendNotification("Reply completed", [
+      `duration: ${formatDuration(duration)}`,
+      `session: ${sessionLabel}`,
+      `agent: ${info.agent || "unknown"}`,
+    ]);
   };
 
-  const cancelPendingLongRepliesForSession = (sessionID) => {
+  const maybeStartReplyCompletionNotification = (event) => {
+    const properties = event.properties ?? {};
+    const commandName = readCommandName(properties);
+    if (!commandName || !notifyOnCommandNames.includes(commandName)) return;
+
+    const sessionID = readSessionID(properties);
     if (!sessionID) return;
 
-    for (const [messageID, pending] of pendingLongReplies.entries()) {
-      if (pending.sessionID !== sessionID) continue;
-      cancel(pending.timeout);
-      pendingLongReplies.delete(messageID);
-    }
-  };
-
-  const markUserActivity = (sessionID) => {
-    cancelPendingLongRepliesForSession(sessionID);
+    pendingReplyNotifications.set(sessionID, readSessionName(properties));
   };
 
   const cleanupSessionPendingInputs = (event) => {
@@ -316,7 +384,7 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
       pendingQuestions.delete(requestID);
     }
 
-    cancelPendingLongRepliesForSession(sessionID);
+    pendingReplyNotifications.delete(sessionID);
   };
 
   return {
@@ -338,13 +406,11 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
           questionDelayMs,
         );
       }
-      if (!hasOptionLongReplyMs) {
-        longReplyMs = normalizeDelayMs(delays.longReplyMs, longReplyMs);
-      }
-      if (!hasOptionLongReplyNotifyDelayMs) {
-        longReplyNotifyDelayMs = normalizeDelayMs(
-          delays.longReplyNotifyDelayMs,
-          longReplyNotifyDelayMs,
+
+      if (!Object.prototype.hasOwnProperty.call(options, "notifyOnCommandNames")) {
+        notifyOnCommandNames = normalizeCommandNames(
+          readNotifyOnCommandNamesFromConfig(config),
+          notifyOnCommandNames,
         );
       }
     },
@@ -356,7 +422,6 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
           return;
         case "permission.replied":
           stopPermissionTimer(event);
-          markUserActivity(event.properties?.sessionID);
           return;
         case "question.asked":
           startQuestionTimer(event);
@@ -364,18 +429,12 @@ export async function createNonotifyOpencodeHooks({ client }, options = {}) {
         case "question.replied":
         case "question.rejected":
           stopQuestionTimer(event);
-          markUserActivity(event.properties?.sessionID);
           return;
         case "message.updated":
-          if (event.properties?.info?.role === "user") {
-            markUserActivity(event.properties.info.sessionID);
-            return;
-          }
-
-          maybeNotifyLongReply(event);
+          await maybeNotifyReplyCompletion(event);
           return;
         case "command.executed":
-          markUserActivity(event.properties?.sessionID);
+          maybeStartReplyCompletionNotification(event);
           return;
         case "session.deleted":
           cleanupSessionPendingInputs(event);

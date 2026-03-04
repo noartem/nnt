@@ -115,8 +115,6 @@ test("uses timing values from opencode config (seconds)", async () => {
     "nonotify-opencode": {
       approvalDelaySeconds: 0.02,
       questionDelaySeconds: 0.02,
-      longReplyThresholdSeconds: 5,
-      activityDelaySeconds: 0.02,
     },
   });
 
@@ -137,7 +135,7 @@ test("uses timing values from opencode config (seconds)", async () => {
   assert.equal(logs.length, 0);
 });
 
-test("uses long reply and activity delays from opencode config (seconds)", async () => {
+test("uses notify command names from opencode config", async () => {
   const sent = [];
   const logs = [];
   const notifier = {
@@ -155,8 +153,17 @@ test("uses long reply and activity delays from opencode config (seconds)", async
 
   await hooks.config({
     "nonotify-opencode": {
-      longReplyThresholdSeconds: 5,
-      activityDelaySeconds: 0.02,
+      notifyOnCommandNames: ["notify-manual"],
+    },
+  });
+
+  await hooks.event({
+    event: {
+      type: "command.executed",
+      properties: {
+        commandName: "notify-manual",
+        sessionID: "session-1",
+      },
     },
   });
 
@@ -178,10 +185,51 @@ test("uses long reply and activity delays from opencode config (seconds)", async
     },
   });
 
-  await sleep(10);
-  assert.equal(sent.length, 0);
+  assert.equal(sent.length, 1);
+  assert.equal(logs.length, 0);
+  assert.match(sent[0].message, /Reply completed/);
+});
+
+test("coalesces permission asked/updated into one notification", async () => {
+  const sent = [];
+  const logs = [];
+  const notifier = {
+    send: async (payload) => {
+      sent.push(payload);
+    },
+  };
+
+  const hooks = await createNonotifyOpencodeHooks(
+    { client: createClient(logs) },
+    { notifier, approvalDelayMs: 20 },
+  );
+
+  await hooks.event({
+    event: {
+      type: "permission.asked",
+      properties: {
+        id: "request-event-1",
+        permissionID: "perm-1",
+        sessionID: "session-1",
+        permission: "bash",
+      },
+    },
+  });
+
+  await hooks.event({
+    event: {
+      type: "permission.updated",
+      properties: {
+        id: "request-event-2",
+        permissionID: "perm-1",
+        sessionID: "session-1",
+        permission: "bash",
+      },
+    },
+  });
 
   await sleep(50);
+
   assert.equal(sent.length, 1);
   assert.equal(logs.length, 0);
 });
@@ -325,7 +373,7 @@ test("does not send question notification if question is replied", async () => {
   assert.equal(logs.length, 0);
 });
 
-test("sends one notification for long assistant reply", async () => {
+test("sends one notification for reply completion after notify command", async () => {
   const sent = [];
   const logs = [];
   const notifier = {
@@ -336,10 +384,21 @@ test("sends one notification for long assistant reply", async () => {
 
   const hooks = await createNonotifyOpencodeHooks(
     { client: createClient(logs) },
-    { notifier, longReplyMs: 5_000, longReplyNotifyDelayMs: 20 },
+    { notifier },
   );
 
-  const longReplyEvent = {
+  await hooks.event({
+    event: {
+      type: "command.executed",
+      properties: {
+        commandName: "notify-next-reply",
+        sessionID: "session-1",
+        sessionName: "Focus mode",
+      },
+    },
+  });
+
+  const completionEvent = {
     event: {
       type: "message.updated",
       properties: {
@@ -357,22 +416,17 @@ test("sends one notification for long assistant reply", async () => {
     },
   };
 
-  await hooks.event(longReplyEvent);
-
-  assert.equal(sent.length, 0);
-
-  await sleep(50);
-
-  await hooks.event(longReplyEvent);
-  await sleep(10);
+  await hooks.event(completionEvent);
+  await hooks.event(completionEvent);
 
   assert.equal(sent.length, 1);
   assert.equal(logs.length, 0);
-  assert.match(sent[0].message, /Long reply completed/);
+  assert.match(sent[0].message, /Reply completed/);
   assert.match(sent[0].message, /duration: 0m 9s/);
+  assert.match(sent[0].message, /session: Focus mode \(session-1\)/);
 });
 
-test("does not notify about long reply if user became active", async () => {
+test("does not notify completion for non-matching command", async () => {
   const sent = [];
   const logs = [];
   const notifier = {
@@ -383,8 +437,18 @@ test("does not notify about long reply if user became active", async () => {
 
   const hooks = await createNonotifyOpencodeHooks(
     { client: createClient(logs) },
-    { notifier, longReplyMs: 5_000, longReplyNotifyDelayMs: 30 },
+    { notifier, notifyOnCommandNames: ["notify-manual"] },
   );
+
+  await hooks.event({
+    event: {
+      type: "command.executed",
+      properties: {
+        commandName: "other-command",
+        sessionID: "session-1",
+      },
+    },
+  });
 
   await hooks.event({
     event: {
@@ -403,27 +467,6 @@ test("does not notify about long reply if user became active", async () => {
       },
     },
   });
-
-  await sleep(10);
-
-  await hooks.event({
-    event: {
-      type: "message.updated",
-      properties: {
-        info: {
-          id: "user-1",
-          role: "user",
-          sessionID: "session-1",
-          time: {
-            created: 12_000,
-            completed: 12_000,
-          },
-        },
-      },
-    },
-  });
-
-  await sleep(50);
 
   assert.equal(sent.length, 0);
   assert.equal(logs.length, 0);
@@ -441,8 +484,18 @@ test("disables notifications after first send failure", async () => {
 
   const hooks = await createNonotifyOpencodeHooks(
     { client: createClient(logs) },
-    { notifier, longReplyMs: 5_000, longReplyNotifyDelayMs: 5 },
+    { notifier },
   );
+
+  await hooks.event({
+    event: {
+      type: "command.executed",
+      properties: {
+        commandName: "notify-next-reply",
+        sessionID: "session-1",
+      },
+    },
+  });
 
   await hooks.event({
     event: {
@@ -462,7 +515,15 @@ test("disables notifications after first send failure", async () => {
     },
   });
 
-  await sleep(25);
+  await hooks.event({
+    event: {
+      type: "command.executed",
+      properties: {
+        commandName: "notify-next-reply",
+        sessionID: "session-1",
+      },
+    },
+  });
 
   await hooks.event({
     event: {
@@ -481,8 +542,6 @@ test("disables notifications after first send failure", async () => {
       },
     },
   });
-
-  await sleep(25);
 
   assert.equal(sendCalls, 1);
   assert.equal(logs.length, 1);
