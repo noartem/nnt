@@ -1,5 +1,11 @@
 # nonotify
 
+## 0.1.15
+
+### Patch Changes
+
+- Refresh CLI dependencies, including `incur`, and update TypeScript config/helpers for compatibility with the latest releases.
+
 ## 0.1.10
 
 ### Patch Changes

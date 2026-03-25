@@ -1,6 +1,6 @@
 {
   "name": "nonotify",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "nnt CLI for Telegram notifications",
   "type": "module",
   "main": "./dist/index.js",
@@ -35,13 +35,13 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@clack/prompts": "^1.0.1",
+    "@clack/prompts": "^1.1.0",
     "cli-table3": "^0.6.5",
-    "incur": "^0.1.8"
+    "incur": "^0.3.13"
   },
   "devDependencies": {
-    "@types/node": "^24.6.2",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
   }
 }

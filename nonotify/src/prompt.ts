@@ -1,5 +1,14 @@
 import { cancel, confirm, isCancel, select, text } from "@clack/prompts";
 
+function exitIfCancelled<T>(value: T | symbol): T {
+  if (isCancel(value)) {
+    cancel("Operation cancelled.");
+    process.exit(1);
+  }
+
+  return value;
+}
+
 export async function askRequired(question: string): Promise<string> {
   return askRequiredWithInitial(question);
 }
@@ -22,12 +31,7 @@ export async function askRequiredWithInitial(
     },
   });
 
-  if (isCancel(value)) {
-    cancel("Operation cancelled.");
-    process.exit(1);
-  }
-
-  return value.trim();
+  return exitIfCancelled(value).trim();
 }
 
 export async function askConfirm(
@@ -39,12 +43,7 @@ export async function askConfirm(
     initialValue,
   });
 
-  if (isCancel(value)) {
-    cancel("Operation cancelled.");
-    process.exit(1);
-  }
-
-  return value;
+  return exitIfCancelled(value);
 }
 
 type SelectOption = {
@@ -63,12 +62,7 @@ export async function askSelect(
     options,
   });
 
-  if (isCancel(value)) {
-    cancel("Operation cancelled.");
-    process.exit(1);
-  }
-
-  return value;
+  return exitIfCancelled(value);
 }
 
 function normalizeQuestion(question: string): string {
